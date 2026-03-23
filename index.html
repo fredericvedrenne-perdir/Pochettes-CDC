@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pochettes CDC - Analyse pour les conseils de classe au collège</title>
+    
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&display=swap" rel="stylesheet">
+
+    <style>
+        :root { --marianne-blue: #000091; --marianne-red: #E1000F; --light-bg: #F5F5FE; --card-bg: #FFFFFF; --text-main: #1E1E1E; --text-muted: #666666; --border-color: #E5E5E5; --success: #008941; }
+        body { font-family: 'Inter', sans-serif; background-color: var(--light-bg); color: var(--text-main); margin: 0; padding: 0; display: flex; flex-direction: column; min-height: 100vh; }
+        header { background-color: #fff; border-bottom: 4px solid var(--marianne-blue); padding: 1.5rem 3rem; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        .header-title h1 { margin: 0; font-size: 1.5rem; color: var(--marianne-blue); font-weight: 700; }
+        .header-title p { margin: 0.2rem 0 0 0; font-size: 0.9rem; color: var(--text-muted); }
+        .header-user { text-align: right; font-size: 0.9rem; font-weight: 600; color: var(--marianne-blue); }
+        
+        .container { max-width: 1400px; margin: 2rem auto; padding: 0 2rem; flex: 1; width: 100%; box-sizing: border-box; }
+        
+	/* --- NOUVELLE ARCHITECTURE UX : DASHBOARD 4 COLONNES --- */
+        .dashboard-grid {
+            display: grid;
+            /* La 3ème colonne passe à 2fr pour un maximum de largeur */
+            grid-template-columns: 1fr 1.2fr 2fr 1fr; 
+            gap: 20px;
+            align-items: stretch; 
+        }
+
+        .dashboard-panel {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .dashboard-panel h2 {
+            margin-top: 0;
+            font-size: 1.1rem;
+            color: var(--marianne-blue);
+            border-bottom: 2px solid var(--light-bg);
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+        }
+
+        /* Panneau désactivé visuellement tant qu'aucun fichier n'est chargé */
+        .panel-disabled {
+            opacity: 0.4;
+            pointer-events: none;
+            filter: grayscale(100%);
+            transition: all 0.3s ease;
+        }
+
+        /* Zone de défilement interne pour les classes */
+   #class-list-container {
+            overflow-y: auto;
+            flex-grow: 1;
+            /* On passe de 250px à 450px pour afficher jusqu'à ~24 classes d'un coup */
+            max-height: 450px; 
+            border: 1px solid var(--border-color);
+            padding: 10px;
+            border-radius: 4px;
+            background: #fafafa;
+            margin-top: 10px;
+            
+            /* Affichage en 2 colonnes */
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            align-content: start; 
+        }
+		
+		/* Permet au message "En attente" de prendre toute la largeur des 2 colonnes */
+        .waiting-msg {
+            grid-column: 1 / -1;
+            text-align: center;
+            color: #999;
+            font-size: 0.85rem;
+            margin-top: 20px;
+        }
+		
+		.action-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2rem; margin-bottom: 2rem; }
+        
+        .card { background: var(--card-bg); border-radius: 8px; padding: 2rem; box-shadow: 0 4px 12px rgba(0,0,0,0.03); border: 1px solid var(--border-color); display: flex; flex-direction: column; }
+        .card-step { display: inline-block; background: var(--light-bg); color: var(--marianne-blue); width: 30px; height: 30px; line-height: 30px; text-align: center; border-radius: 50%; font-weight: bold; margin-bottom: 1rem; }
+        .card h2 { margin-top: 0; font-size: 1.25rem; }
+        .card p { font-size: 0.9rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 1rem;}
+        input[type="file"] { display: block; width: 100%; padding: 0.5rem 0; margin-top: auto; font-size: 0.9rem; }
+        
+        button { background-color: var(--marianne-blue); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 4px; font-size: 1rem; font-weight: 600; cursor: pointer; width: 100%; margin-top: auto; transition: background-color 0.2s; }
+        button:hover:not(:disabled) { background-color: #000075; }
+        button:disabled { background-color: #cccccc; cursor: not-allowed; }
+        button.btn-pdf { background-color: var(--marianne-red); }
+        button.btn-pdf:hover:not(:disabled) { background-color: #b3000c; }
+        
+        .class-selector { flex: 1; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 4px; padding: 1rem; margin-bottom: 1rem; background: #fafafa; min-height: 150px; }
+        .class-item { display: flex; align-items: center; margin-bottom: 0.5rem; }
+        .class-item input { margin-right: 0.5rem; }
+        
+        #notification { display: none; padding: 1rem; border-radius: 4px; margin-bottom: 2rem; font-weight: 600; text-align: center; z-index: 1000; position: relative;}
+        .notify-success { background-color: #e6f6ec; color: var(--success); border: 1px solid #b3e3c6; }
+        .notify-warning { background-color: #fff4e5; color: #cc7700; border: 1px solid #ffe0b2; }
+        
+        /* GABARIT STRICT A3 PAYSAGE (1587px x 1122px) IMMUNISÉ CONTRE LE ROGNAGE */
+        #pdf-render-zone { position: absolute; left: -9999px; top: 0; width: 1587px; background: white; }
+        
+        .pdf-page-a3 { 
+            width: 1587px; 
+            height: 1122px; 
+            background: white; 
+            box-sizing: border-box; 
+            page-break-after: always; 
+            font-family: 'Inter', sans-serif;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* RECTO : Divisé en 2 moitiés absolues */
+        .half-page { position: absolute; top: 0; height: 1122px; width: 793px; padding: 40px; box-sizing: border-box; }
+        .left-half { left: 0; border-right: 1px dashed #ccc; } /* DOS DE LA POCHETTE */
+        .right-half { left: 793px; } /* COUVERTURE DE LA POCHETTE */
+        
+        /* VERSO : Pleine largeur absolue (Marges verticales réduites) */
+        .full-page { position: absolute; top: 0; left: 0; width: 1587px; height: 1122px; padding: 30px 60px; box-sizing: border-box; }
+
+/* --- BLOC DE DROITE (COUVERTURE) AÉRÉ --- */
+        .pdf-header { text-align: center; margin-bottom: 25px; border-bottom: 4px solid var(--marianne-blue); padding-bottom: 15px; }
+        .pdf-title { font-size: 34px; color: var(--marianne-blue); margin: 0; text-transform: uppercase; font-weight:900; }
+        .pdf-subtitle { font-size: 20px; color: var(--text-muted); margin-top:8px; }
+        
+        .kpi-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 25px; }
+        .kpi-card { background: #f9f9fc; border: 1px solid #e0e0e0; border-radius: 8px; padding: 15px; text-align: center; }
+        .kpi-value { font-size: 30px; font-weight: bold; color: var(--marianne-blue); margin: 5px 0; }
+        .kpi-label { font-size: 13px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+        .kpi-sub { font-size: 12px; color: #888; }
+        
+        .charts-container { display: flex; flex-direction: column; gap: 20px; }
+        .chart-box { border: 1px solid #eee; padding: 15px; border-radius: 8px; background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .chart-title { text-align: center; font-size: 15px; font-weight: 700; margin-bottom: 10px; color: var(--text-main); width: 100%; }
+        
+        .pdf-section-title { font-size: 19px; color: var(--marianne-blue); border-bottom: 2px solid var(--marianne-blue); padding-bottom: 5px; margin-bottom: 15px; font-weight: bold; }
+        
+/* --- TABLEAUX RECTO ET VERSO (QUADRILLAGE & LISIBILITÉ MAXIMALE) --- */
+        .pdf-table { width: 100%; border-collapse: collapse; font-size: 11px; empty-cells: show; } 
+        .table-verso { font-size: 11px; } /* Réduction de 12px à 11px pour optimiser l'espace vertical */
+        
+        /* Bordures plus franches (#bbb) pour un quadrillage bien net */
+        /* Padding réduit (3px en haut/bas au lieu de 6px) pour compacter les lignes */
+        .pdf-table th, .pdf-table td { border: 1px solid #bbb; padding: 3px 4px; text-align: center; vertical-align: middle; } 
+        .pdf-table th { background-color: #f4f6f8; color: var(--marianne-blue); font-weight: 700; font-size: 12px; }
+        
+        /* En-têtes du verso : padding réduit (4px au lieu de 8px) */
+        .table-verso th { font-size: 12px; padding: 4px 5px; } 
+        
+        .pdf-table td.text-left { text-align: left; padding-left: 8px; }
+        
+        /* Effet Zébré : 1 ligne sur 2 légèrement grisée pour guider la lecture horizontale */
+        .pdf-table tbody tr:nth-child(even) { background-color: #f8f9fa; }
+        
+        /* Ligne d'alerte (Baisse de moyenne) prioritaire sur le zébré */
+        .tr-alert { background-color: #fff0f0 !important; }
+        .cell-red { color: var(--marianne-red); font-weight: bold; }
+        .cell-green { color: var(--success); font-weight: bold; }
+		
+		/* ==========================================
+           MODE IMPRESSION STRICT (EXPORT PDF NATIF)
+           ========================================== */
+        /* ==========================================
+           MODE IMPRESSION STRICT (EXPORT PDF NATIF)
+           ========================================== */
+        @media print {
+            /* On cache toute l'interface de l'application */
+            header, .container, #notification, #canvas-temp-zone {
+                display: none !important;
+            }
+
+            /* On réinitialise la page pour le PDF */
+            body {
+                background: white;
+                margin: 0;
+                padding: 0;
+            }
+
+            /* On affiche uniquement notre zone de rendu A3 */
+            #pdf-render-zone {
+                position: relative !important;
+                left: 0 !important;
+                top: 0 !important;
+                display: block !important;
+                width: 100% !important;
+            }
+
+            /* On force le format A3 Paysage sans aucunes marges du navigateur */
+            @page {
+                size: A3 landscape;
+                margin: 0;
+            }
+
+            /* On s'assure que chaque gabarit fait bien une page entière */
+            ./* On s'assure que chaque gabarit fait bien une page entière */
+            .pdf-page-a3 {
+                height: 1120px !important; 
+                overflow: hidden !important; 
+                page-break-after: always;
+                break-after: page;
+                box-shadow: none;
+            }
+
+            /* RÈGLE CLÉ : On empêche le saut de page après la toute dernière pochette */
+            .pdf-page-a3:last-child {
+                page-break-after: auto;
+                break-after: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="header-title">
+            <h1>Pochettes CDC</h1>
+            <p>Module de Pilotage - Conseils de Classe</p>
+        </div>
+        <div class="header-user">
+            By Fred VEDRENNE<br>
+            <span style="font-weight: 400; font-size: 0.8rem; color: var(--text-muted);">V1</span>
+        </div>
+    </header>
+
+<div class="container">
+        
+        <div id="notification"></div>
+
+        <div class="dashboard-grid">
+            
+            <div class="dashboard-panel">
+                <h2><span style="margin-right:8px;">📥</span> 1. Importation</h2>
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px;">Importez le fichier d'extraction issu de l'ENT ou de Pronote.</p>
+                <label for="excel-upload" style="font-weight: 600; font-size: 0.9rem; margin-bottom: 5px; display: block;">Fichier source (Excel/CSV)</label>
+                <input type="file" id="excel-upload" accept=".xlsx, .xls, .csv" multiple style="width: 100%; border: 1px dashed #ccc; padding: 10px; border-radius: 4px; background: #fafafa; cursor: pointer;">
+            </div>
+
+            <div class="dashboard-panel panel-disabled" id="panel-config">
+                <h2><span style="margin-right:8px;">⚙️</span> 2. Paramétrage</h2>
+                
+                <label for="select-trimestre" style="font-size: 0.85rem; font-weight: 600; color: #444; margin-bottom: 5px;">Période d'évaluation :</label>
+                <select id="select-trimestre" style="width: 100%; font-size: 0.9rem; padding: 8px; border-radius: 4px; border: 1px solid #ccc; font-weight: 600; color: var(--marianne-blue); margin-bottom: 20px;">
+                    <option value="1">Trimestre 1 (Aucun comparatif)</option>
+                    <option value="2" selected>Trimestre 2 (Comparatif T1)</option>
+                    <option value="3">Trimestre 3 (Comparatif T2)</option>
+                </select>
+
+                <label style="font-size: 0.85rem; font-weight: 600; color: #444; margin-bottom: 5px;">Modalités par niveau :</label>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; background: #f0f7ff; padding: 10px; border-radius: 6px; border: 1px solid #00009122;">
+                    <div><label style="font-size:0.75rem;">6ème :</label><select onchange="mappingConfig['6'] = this.value" style="width:100%; font-size:0.8rem; padding:4px;"><option value="notes">Moyennes</option><option value="competences" selected>Compétences</option></select></div>
+                    <div><label style="font-size:0.75rem;">5ème :</label><select onchange="mappingConfig['5'] = this.value" style="width:100%; font-size:0.8rem; padding:4px;"><option value="notes" selected>Moyennes</option><option value="competences">Compétences</option></select></div>
+                    <div><label style="font-size:0.75rem;">4ème :</label><select onchange="mappingConfig['4'] = this.value" style="width:100%; font-size:0.8rem; padding:4px;"><option value="notes" selected>Moyennes</option><option value="competences">Compétences</option></select></div>
+                    <div><label style="font-size:0.75rem;">3ème :</label><select onchange="mappingConfig['3'] = this.value" style="width:100%; font-size:0.8rem; padding:4px;"><option value="notes" selected>Moyennes</option><option value="competences">Compétences</option></select></div>
+                </div>
+            </div>
+
+   <div class="dashboard-panel panel-disabled" id="panel-classes">
+                <h2><span style="margin-right:8px;">📂</span> 3. Classes</h2>
+                <button id="btn-select-all" class="btn-primary" style="padding: 6px 12px; font-size: 0.85rem;" disabled>Tout cocher</button>
+                <div id="class-list-container">
+                    <p class="waiting-msg">En attente du fichier...</p>
+                </div>
+            </div>
+
+            <div class="dashboard-panel panel-disabled" id="panel-print">
+                <h2><span style="margin-right:8px;">🖨️</span> 4. Impression</h2>
+                
+                <div style="background: #fff4e5; border: 1px solid #ffe0b2; padding: 10px; border-radius: 6px; margin-bottom: 20px; display: flex; flex-direction: column; gap: 10px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <input type="checkbox" id="chk-include-discipline" checked style="width: 18px; height: 18px; cursor: pointer;">
+                        <label for="chk-include-discipline" style="font-size: 0.85rem; font-weight: 600; color: #cc7700; cursor: pointer;">
+                            Inclure les punitions et sanctions
+                        </label>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <input type="checkbox" id="chk-include-orientation" checked style="width: 18px; height: 18px; cursor: pointer;">
+                        <label for="chk-include-orientation" style="font-size: 0.85rem; font-weight: 600; color: #cc7700; cursor: pointer;">
+                            Inclure les vœux d'orientation (3ème)
+                        </label>
+                    </div>
+                </div>
+
+                <div style="margin-top: auto;">
+                    <button id="btn-generate-pdf" class="btn-primary" style="width: 100%; padding: 12px; font-size: 1rem;" disabled>Générer les Pochettes A3</button>
+                    <p style="font-size: 0.75rem; color: var(--text-muted); text-align: center; margin-top: 10px;">Ajustez l'échelle lors de l'impression PDF. Le réglage à 96% est souvent le plus adapté !</p>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <div id="pdf-render-zone"></div>
+    <div id="canvas-temp-zone" style="position: absolute; left: -9999px; width: 800px;"></div>
+
+    <script>
+// ==================================================
+// 1. VARIABLES GLOBALES ET CONFIGURATION
+// ==================================================
+let mappingConfig = { '6': 'competences', '5': 'notes', '4': 'notes', '3': 'notes' };
+let rawData = {};
+let classesDisponibles = new Set();
+let classesSelectionnees = new Set();
+let isAllSelected = false;
+let matieresList = [];
+
+// ==================================================
+// 2. ÉCOUTEUR D'IMPORT DE FICHIER (EXCEL / CSV)
+// ==================================================
+document.getElementById('excel-upload').addEventListener('change', async function(e) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    notify("Analyse des fichiers en cours...", "notify-warning");
+    rawData = {}; classesDisponibles.clear();
+
+    try {
+        for (let i = 0; i < files.length; i++) {
+            let file = files[i];
+            let buffer = await file.arrayBuffer();
+            let data = new Uint8Array(buffer);
+            let workbook = XLSX.read(data, {type: 'array'});
+            
+            workbook.SheetNames.forEach(function(sheetName) {
+                let keyName = file.name.toLowerCase().includes('.csv') ? file.name : sheetName;
+                const sheetArr = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {header: 1, defval: ""});
+                
+                if (sheetArr.length > 0) {
+                    rawData[keyName] = { sheetArr: sheetArr };
+                    let classCol = -1;
+                    let maxCols = Math.max(sheetArr[0].length, sheetArr[1] ? sheetArr[1].length : 0);
+                    for(let c=0; c<maxCols; c++) {
+                       let h0 = (sheetArr[0][c] || "").toString().toLowerCase().trim();
+                       let h1 = sheetArr[1] ? (sheetArr[1][c] || "").toString().toLowerCase().trim() : "";
+                       let h2 = sheetArr[2] ? (sheetArr[2][c] || "").toString().toLowerCase().trim() : "";
+                       if(h0.includes('classe') || h1.includes('classe') || h2.includes('classe')) { classCol = c; break; }
+                    }
+
+                    if(classCol !== -1) {
+                        for(let r=1; r<sheetArr.length; r++) {
+                            let classe = (sheetArr[r][classCol] || "").toString().trim();
+                            if (classe && classe.length >= 2 && classe.length <= 4 && !classe.toLowerCase().includes('élève') && !classe.toLowerCase().includes('moy')) {
+                                classesDisponibles.add(classe);
+                            }
+                        }
+                    }
+                }
+            });
+        }
+       if(classesDisponibles.size > 0) {
+            populateClassSelector(Array.from(classesDisponibles).sort());
+            notify(`${classesDisponibles.size} classes détectées avec succès.`, "notify-success");
+            
+            // On "allume" les panneaux 2, 3 et 4
+            document.getElementById('panel-config').classList.remove('panel-disabled');
+            document.getElementById('panel-classes').classList.remove('panel-disabled');
+            document.getElementById('panel-print').classList.remove('panel-disabled');
+            
+            // On déverrouille les boutons
+            document.getElementById('btn-generate-pdf').disabled = false;
+            document.getElementById('btn-select-all').disabled = false;
+        }
+    } catch (err) { console.error(err); notify("Erreur de lecture du fichier.", "notify-warning"); }
+});
+
+// ==================================================
+// 3. CRÉATION DE L'INTERFACE UI (TRIMESTRE + CLASSES)
+// ==================================================
+function populateClassSelector(classes) {
+    const container = document.getElementById('class-list-container');
+    container.innerHTML = ''; // On vide le message "En attente du fichier..."
+
+    // On ne génère plus que la liste des classes (Bloc 3)
+    classes.forEach(cls => {
+        const div = document.createElement('div'); div.className = 'class-item';
+        const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.id = `chk-${cls}`; checkbox.value = cls;
+        checkbox.addEventListener('change', (e) => { e.target.checked ? classesSelectionnees.add(e.target.value) : classesSelectionnees.delete(e.target.value); });
+        
+        const label = document.createElement('label'); label.htmlFor = `chk-${cls}`; label.textContent = `Classe : ${cls}`;
+        
+        div.appendChild(checkbox); div.appendChild(label); container.appendChild(div);
+    });
+
+    isAllSelected = false; 
+    document.getElementById('btn-select-all').textContent = "Tout cocher";
+}
+
+// ==================================================
+// 3.5. GESTION DU BOUTON "TOUT COCHER"
+// ==================================================
+document.getElementById('btn-select-all').addEventListener('click', (e) => {
+    isAllSelected = !isAllSelected; 
+    e.target.textContent = isAllSelected ? "Tout décocher" : "Tout cocher";
+    
+    // On parcourt toutes les cases à cocher générées
+    document.querySelectorAll('.class-item input[type="checkbox"]').forEach(chk => { 
+        chk.checked = isAllSelected; 
+        if (isAllSelected) {
+            classesSelectionnees.add(chk.value); 
+        } else {
+            classesSelectionnees.delete(chk.value); 
+        }
+    });
+});
+
+// ==================================================
+// 4. LOGIQUE MÉTIER ET EXTRACTION DE DONNÉES
+// ==================================================
+function abbreviateVoeux(text) {
+    if (!text) return "";
+    let t = text.toString().toLowerCase(); let res = [];
+    if (t.includes("générale et technologique") || t.includes("sthr")) res.push("2GT");
+    if (t.includes("professionnelle") || t.includes("bnma")) res.push("2PRO");
+    if (t.includes("cap")) res.push("CAP");
+    if (res.length === 0) return "";
+    return [...new Set(res)].join(" / ");
+}
+
+function extractData() {
+    let students = {}; let subjectsDetected = new Set(); let levelStats = {};
+    const selectTrim = document.getElementById('select-trimestre');
+    const trimActuel = selectTrim ? parseInt(selectTrim.value) : 2; 
+    const trimPrec = trimActuel - 1; 
+    const strActuel = `T${trimActuel}`; const strPrec = `T${trimPrec}`;
+
+    const cleanStr = (s) => s ? s.toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim() : "";
+    const normalizeName = (name) => name.replace(/\s+/g, ' ').trim().toLowerCase();
+
+    let allKeys = Object.keys(rawData);
+    let keysNormal = allKeys.filter(k => !cleanStr(k).includes('orient'));
+    let keysOrientation = allKeys.filter(k => cleanStr(k).includes('orient'));
+
+    keysNormal.forEach(keyName => {
+        const sheetArr = rawData[keyName].sheetArr; if(!sheetArr || sheetArr.length < 2) return;
+        let upperName = keyName.toUpperCase(); let significantPart = upperName.includes('-') ? upperName.split('-').pop() : upperName;
+        const isActuel = significantPart.includes(strActuel); const isPrec = trimPrec > 0 ? significantPart.includes(strPrec) : false;
+        
+        if (!isActuel && !isPrec) return; 
+
+        const isPunitions = significantPart.includes('PUNIT'); const isSanctions = significantPart.includes('SANCT');
+        const isAbs = significantPart.includes('ABS') || significantPart.includes('RETARD');
+        const isCompetences = significantPart.includes('COMPÉTENCE') || significantPart.includes('COMPETENCE');
+
+        let col = { classe: -1, nom: -1, moyGen: -1, abs: -1, retards: -1, retardsMin: -1 };
+        let subjectCols = {}; let maxCols = Math.max(sheetArr[0].length, sheetArr[1] ? sheetArr[1].length : 0);
+        
+        for (let c = 0; c < maxCols; c++) {
+            let h0 = cleanStr(sheetArr[0][c]); let h1 = sheetArr[1] ? cleanStr(sheetArr[1][c]) : ""; let h2 = sheetArr[2] ? cleanStr(sheetArr[2][c]) : "";
+            let combined = `${h0} ${h1} ${h2}`;
+            if (combined.includes('classe')) col.classe = c;
+            if (col.nom === -1 && (combined.includes('nom') || combined.includes('eleve'))) col.nom = c;
+            if (col.moyGen === -1 && combined.includes('moyenne')) col.moyGen = c;
+            if (combined.includes('nb abs') || combined.includes('demi-journees')) col.abs = c;
+            if (combined.includes('retard') && !combined.includes('minutes')) col.retards = c;
+            if (combined.includes('retard') && combined.includes('minutes')) col.retardsMin = c;
+
+            if (!isPunitions && !isSanctions && !isAbs) {
+                if (isCompetences) {
+                    if (h0.length > 0 && !combined.includes('classe') && !combined.includes('nom') && !combined.includes('moyenne')) {
+                        let subj = sheetArr[0][c].toString().toUpperCase(); subjectCols[c] = subj; subjectsDetected.add(subj);
+                    }
+                } else {
+                    if (h0.length > 0 && h1.startsWith('moy') && !h0.includes('moyenne')) {
+                        let subj = sheetArr[0][c].toString().toUpperCase(); subjectCols[c] = subj; subjectsDetected.add(subj);
+                    }
+                }
+            }
+        }
+
+        if (col.classe === -1 || col.nom === -1) return;
+
+        for (let r = 1; r < sheetArr.length; r++) {
+            let classeVal = (sheetArr[r][col.classe] || "").toString().trim(); let nomVal = (sheetArr[r][col.nom] || "").toString().trim();
+            let nomLower = nomVal.toLowerCase(); let classeLower = classeVal.toLowerCase();
+
+            if (!nomVal || !classeVal || classeVal.length > 5 || classeLower.includes('élève') || classeLower.includes('eleve') || nomLower === 'nom' || nomLower === 'élève' || nomLower === 'eleve' || nomLower.includes('externe') || nomLower.includes('pensionnaire') || nomLower.includes('interne') || nomLower.includes('moyenne') || nomLower.includes('élèves') || nomLower.includes('eleves')) {
+                continue;
+            }
+            
+            let nom = nomVal; let classe = classeVal; let niveau = classe.charAt(0);
+            let modeAttendu = mappingConfig[niveau] || 'notes'; let isResultatsNotes = !isCompetences && !isPunitions && !isSanctions && !isAbs;
+
+            if (isCompetences && modeAttendu !== 'competences') continue;
+            if (isResultatsNotes && modeAttendu !== 'notes') continue;
+
+            if (!students[nom]) students[nom] = { nom, classe, niveau, moyPrec: null, moyAct: null, absPrec: 0, absAct: 0, retardsPrec: 0, retardsAct: 0, punitionsPrec: 0, punitionsAct: 0, sanctionsPrec: 0, sanctionsAct: 0, notesPrec: {}, notesAct: {}, voeux: "" };
+
+            if (isPunitions) { if (isPrec) students[nom].punitionsPrec++; if (isActuel) students[nom].punitionsAct++; } 
+            else if (isSanctions) { if (isPrec) students[nom].sanctionsPrec++; if (isActuel) students[nom].sanctionsAct++; } 
+            else if (isAbs) {
+                let vAbs = parseInt(sheetArr[r][col.abs]) || 0;
+                let vRet = col.retardsMin !== -1 ? (parseInt(sheetArr[r][col.retardsMin]) || 0) : (parseInt(sheetArr[r][col.retards]) * 10 || 0);
+                if (isPrec) { students[nom].absPrec += vAbs; students[nom].retardsPrec += vRet; }
+                if (isActuel) { students[nom].absAct += vAbs; students[nom].retardsAct += vRet; }
+            }
+            else {
+                if (col.moyGen !== -1) {
+                    let val = sheetArr[r][col.moyGen];
+                    if (val && !['Abs', 'Disp'].includes(val)) {
+                        let moy = parseFloat(val.toString().replace(',', '.'));
+                        if (!isNaN(moy)) { if (isPrec) students[nom].moyPrec = moy; if (isActuel) students[nom].moyAct = moy; }
+                    }
+                }
+                Object.keys(subjectCols).forEach(cIdx => {
+                    let val = sheetArr[r][cIdx];
+                    if (val && !['Abs', 'Disp'].includes(val)) {
+                        let m = NaN; let sVal = val.toString().toUpperCase();
+                        if (sVal.startsWith('POS.')) m = parseInt(sVal.split('.')[1]); else m = parseFloat(sVal.replace(',', '.'));
+                        if (!isNaN(m)) { let mat = subjectCols[cIdx]; if (isPrec) students[nom].notesPrec[mat] = m; else if (isActuel) students[nom].notesAct[mat] = m; }
+                    }
+                });
+            }
+        }
+    });
+
+keysOrientation.forEach(keyName => {
+        const sheetArr = rawData[keyName].sheetArr; if(!sheetArr || sheetArr.length < 2) return;
+        
+        // --- DÉBUT DU CORRECTIF : Filtrage temporel de l'orientation ---
+        let upperName = keyName.toUpperCase();
+        // Si l'onglet d'orientation précise un trimestre (T1, T2, T3) différent de celui sélectionné, on l'ignore
+        if ((upperName.includes('T1') || upperName.includes('T2') || upperName.includes('T3')) && !upperName.includes(strActuel)) {
+            return; 
+        }
+        // --- FIN DU CORRECTIF ---
+
+        let colNomOri = -1, colPrenomOri = -1; let voeuxCols = []; let maxCols = Math.max(sheetArr[0].length, sheetArr[1] ? sheetArr[1].length : 0);
+        for (let c = 0; c < maxCols; c++) {
+            let h0 = (sheetArr[0][c] || "").toString().trim(); let h1 = sheetArr[1] ? (sheetArr[1][c] || "").toString().trim() : ""; let h2 = sheetArr[2] ? (sheetArr[2][c] || "").toString().trim() : ""; let combined = `${h0} ${h1} ${h2}`.toLowerCase();
+            if (combined.includes('intention') || combined.includes('vœu') || combined.includes('voeu') || combined.includes('demande') || combined.includes('choix')) voeuxCols.push(c);
+            if (combined.includes('nom') && colNomOri === -1) colNomOri = c; if (combined.includes('prénom') && colPrenomOri === -1) colPrenomOri = c;
+        }
+        let currentOrientationEleve = null;
+        for (let r = 1; r < sheetArr.length; r++) {
+            let nomPart = ""; let prenomPart = "";
+            if (colNomOri !== -1) { nomPart = (sheetArr[r][colNomOri] || "").toString().trim(); if (!nomPart && colNomOri + 1 < maxCols && colNomOri + 1 !== colPrenomOri) nomPart = (sheetArr[r][colNomOri + 1] || "").toString().trim(); } 
+            else nomPart = (sheetArr[r][1] || "").toString().trim() || (sheetArr[r][2] || "").toString().trim();
+            if (colPrenomOri !== -1) prenomPart = (sheetArr[r][colPrenomOri] || "").toString().trim(); else prenomPart = (sheetArr[r][3] || "").toString().trim();
+            if (nomPart || prenomPart) currentOrientationEleve = `${nomPart} ${prenomPart}`.trim();
+            if (currentOrientationEleve && voeuxCols.length > 0) {
+                let vText = voeuxCols.map(c => sheetArr[r][c]).filter(v => v).join(" ");
+                if (vText.trim() !== "") {
+                    let abv = abbreviateVoeux(vText); let targetName = normalizeName(currentOrientationEleve); let studentKey = Object.keys(students).find(k => normalizeName(k) === targetName);
+                    if (studentKey && abv) { let s = students[studentKey]; if (s.voeux) s.voeux += " / " + abv; else s.voeux = abv; s.voeux = [...new Set(s.voeux.split(" / "))].join(" / "); }
+                }
+            }
+        }
+    });
+
+    Object.values(students).forEach(s => {
+        let mode = mappingConfig[s.niveau] || 'notes';
+        if (mode === 'competences') {
+            let n1 = Object.values(s.notesPrec); if (n1.length > 0) s.moyPrec = n1.reduce((a,b)=>a+b,0)/n1.length;
+            let n2 = Object.values(s.notesAct); if (n2.length > 0) s.moyAct = n2.reduce((a,b)=>a+b,0)/n2.length; 
+        }
+        if (!levelStats[s.niveau]) levelStats[s.niveau] = { moyPrec: [], moyAct: [] };
+        if (s.moyPrec !== null) levelStats[s.niveau].moyPrec.push(s.moyPrec);
+        if (s.moyAct !== null) levelStats[s.niveau].moyAct.push(s.moyAct);
+    });
+
+    matieresList = Array.from(subjectsDetected).sort();
+    return { students, levelStats };
+}
+
+// ==================================================
+// 5. CHART.JS & GÉNÉRATION PDF
+// ==================================================
+async function createChartImage(config, width=650, height=280) {
+    return new Promise((resolve) => {
+        const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
+        document.getElementById('canvas-temp-zone').appendChild(canvas);
+        const customBgPlugin = {
+            id: 'customCanvasBackgroundColor',
+            beforeDraw: (chart) => {
+                const ctx = chart.canvas.getContext('2d');
+                ctx.save(); ctx.globalCompositeOperation = 'destination-over'; ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, chart.width, chart.height); ctx.restore();
+            }
+        };
+        if(!config.plugins) config.plugins = []; config.plugins.push(customBgPlugin);
+        const chart = new Chart(canvas, Object.assign({}, config, { options: Object.assign({}, config.options, { animation: false, responsive: false }) }));
+        setTimeout(() => { const imgData = chart.toBase64Image('image/jpeg', 1.0); chart.destroy(); canvas.remove(); resolve(imgData); }, 150);
+    });
+}
+
+document.getElementById('btn-generate-pdf').addEventListener('click', async function() {
+    if (classesSelectionnees.size === 0) return;
+    document.getElementById('btn-generate-pdf').disabled = true;
+    notify("Génération de la Pochette A3 stricte en cours...", "notify-warning");
+    
+    const includeOrientation = document.getElementById('chk-include-orientation').checked;
+    const includeDiscipline = document.getElementById('chk-include-discipline').checked;
+    const renderZone = document.getElementById('pdf-render-zone'); renderZone.innerHTML = ''; 
+    const data = extractData();
+    const allStudents = Object.values(data.students);
+
+    const selectTrim = document.getElementById('select-trimestre');
+    const trimActuel = selectTrim ? parseInt(selectTrim.value) : 2;
+    const titreTrimestre = trimActuel === 1 ? "1ER TRIMESTRE" : `${trimActuel}ÈME TRIMESTRE`;
+
+    for (let cls of classesSelectionnees) {
+        let classStudents = allStudents.filter(s => s.classe === cls).sort((a, b) => a.nom.localeCompare(b.nom));
+        let niveau = cls.charAt(0);
+        const isSixieme = cls.startsWith('6'); const isTroisieme = cls.startsWith('3');
+        
+        let moyPrecClass = classStudents.map(s => s.moyPrec).filter(m => m !== null);
+        let avgPrec = moyPrecClass.length ? (moyPrecClass.reduce((a,b)=>a+b,0)/moyPrecClass.length).toFixed(1) : '-';
+        let moyActClass = classStudents.map(s => s.moyAct).filter(m => m !== null);
+        let avgAct = moyActClass.length ? (moyActClass.reduce((a,b)=>a+b,0)/moyActClass.length).toFixed(1) : '-';
+        
+        let totalNotes = 0; let less10 = 0; 
+        classStudents.forEach(s => {
+            Object.values(s.notesAct).forEach(note => {
+                if (note !== undefined && note !== null) {
+                    totalNotes++;
+                    if (isSixieme ? note < 3 : note < 10) less10++;
+                }
+            });
+        });
+        
+        let tauxReussite = totalNotes > 0 ? (((totalNotes - less10) / totalNotes) * 100).toFixed(0) : '-';                
+        let labelReussite = isSixieme ? `Réussite T${trimActuel} (Pos. 3 & 4)` : `Taux Réussite T${trimActuel} (≥10)`;
+        let subReussite = isSixieme ? `${less10} pos. 1-2 (sur ${totalNotes})` : `${less10} notes < 10 (sur ${totalNotes})`;
+
+        let totalAbsAct = classStudents.reduce((sum, s) => sum + s.absAct, 0); 
+        let avgAbsAct = classStudents.length ? ((totalAbsAct * 3.5) / classStudents.length).toFixed(1) : '-';
+        let avgRetardsMin = classStudents.length ? (classStudents.reduce((sum, s) => sum + s.retardsAct, 0) / classStudents.length).toFixed(0) : '-';
+
+        let lStats = data.levelStats[niveau] || {moyPrec:[], moyAct:[]};
+        let lAvgPrec = lStats.moyPrec.length ? (lStats.moyPrec.reduce((a,b)=>a+b,0)/lStats.moyPrec.length).toFixed(1) : '-';
+        let lAvgAct = lStats.moyAct.length ? (lStats.moyAct.reduce((a,b)=>a+b,0)/lStats.moyAct.length).toFixed(1) : '-';
+
+        let dist = isSixieme ? {"<2":0, "2-2.5":0, "2.5-3":0, ">3":0} : {"<10":0, "10-12":0, "12-15":0, ">15":0};
+        let labelsDist = isSixieme ? ['< 2', '2 à 2.5', '2.5 à 3', '> 3'] : ['< 10', '10 à 12', '12 à 15', '> 15'];
+        moyActClass.forEach(m => { 
+            if(isSixieme) { if(m<2) dist["<2"]++; else if(m<2.5) dist["2-2.5"]++; else if(m<3) dist["2.5-3"]++; else dist[">3"]++; }
+            else { if(m<10) dist["<10"]++; else if(m<12) dist["10-12"]++; else if(m<15) dist["12-15"]++; else dist[">15"]++; }
+        });
+        
+        const imgDist = await createChartImage({ type: 'bar', data: { labels: labelsDist, datasets: [{ data: Object.values(dist), backgroundColor: ['#E1000F', '#FFD700', '#29D64E', '#136324'] }] }, options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } } }, 450, 240);
+
+        let matPrec = [], matAct = [], labelsMat = [];
+        matieresList.forEach(mat => {
+            let nPrec = classStudents.map(s => s.notesPrec[mat]).filter(n => n!==undefined);
+            let nAct = classStudents.map(s => s.notesAct[mat]).filter(n => n!==undefined);
+            if(nPrec.length > 0 || nAct.length > 0) {
+                labelsMat.push(mat); 
+                matPrec.push(nPrec.length ? (nPrec.reduce((a,b)=>a+b,0)/nPrec.length).toFixed(1) : 0); 
+                matAct.push(nAct.length ? (nAct.reduce((a,b)=>a+b,0)/nAct.length).toFixed(1) : 0);
+            }
+        });
+
+        let datasetsChart = trimActuel === 1 ? [ { label: `T${trimActuel}`, data: matAct, backgroundColor: '#000091' } ] : [ { label: `T${trimActuel-1}`, data: matPrec, backgroundColor: '#bbbbbb' }, { label: `T${trimActuel}`, data: matAct, backgroundColor: '#000091' } ];
+        const imgHist = await createChartImage({ type: 'bar', data: { labels: labelsMat, datasets: datasetsChart }, options: { scales: { y: { beginAtZero: true, max: isSixieme ? 4 : 20 } } } }, 650, 240);
+
+        const formatPastille = (note) => {
+            if (note === undefined || note === null || isNaN(note)) return '-';
+            if (isSixieme) {
+                let num = parseFloat(note); if (num < 1) num = 1; if (num > 4) num = 4;
+                let textColor = '#000000';
+                if (num < 2) textColor = '#E1000F'; else if (num < 2.5) textColor = '#E6B800'; else if (num < 3.5) textColor = '#29D64E'; else textColor = '#136324';
+                let displayVal = Number.isInteger(num) ? num : num.toFixed(1);
+                return `<strong style="color:${textColor}; font-size:13px;">${displayVal}</strong>`;
+            }
+            return parseFloat(note).toFixed(1);
+        };
+
+        const pageRecto = document.createElement('div'); pageRecto.className = 'pdf-page-a3';
+        let subClasseStr = trimActuel === 1 ? '' : `T${trimActuel-1} : ${avgPrec}`;
+        let subNiveauStr = trimActuel === 1 ? '' : `T${trimActuel-1} : ${lAvgPrec}`;
+
+        pageRecto.innerHTML = `
+            <div class="half-page left-half">
+                <div class="pdf-section-title" style="margin-top:0;">Synthèse disciplinaire du trimestre (T${trimActuel})</div>
+                <table class="pdf-table">
+                    <thead><tr><th class="text-left" style="width:20%">Élève</th><th>Moy. Gén.</th>${labelsMat.map(m => `<th>${m}</th>`).join('')}</tr></thead>
+                    <tbody>
+                        ${classStudents.map(s => `<tr><td class="text-left"><strong>${s.nom}</strong></td><td style="font-weight:bold; color:var(--marianne-blue);">${s.moyAct !== null ? s.moyAct.toFixed(1) : '-'}</td>${labelsMat.map(m => `<td>${formatPastille(s.notesAct[m])}</td>`).join('')}</tr>`).join('')}
+                        <tr style="background-color: #f0f4f8; font-weight: bold; border-top: 2px solid var(--marianne-blue);"><td class="text-left">MOYENNE CLASSE</td><td style="color:var(--marianne-blue);">${avgAct}</td>${labelsMat.map((m, idx) => `<td>${matAct[idx]}</td>`).join('')}</tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="half-page right-half">
+                <div class="pdf-header"><h1 class="pdf-title">CONSEIL DE CLASSE - ${titreTrimestre}</h1><div class="pdf-subtitle">Tableau de bord - Classe de <strong>${cls}</strong></div></div>
+                <div class="pdf-section-title" style="text-align: center;">Photographie Collective : Classe et Niveau</div>                        
+                <div class="kpi-grid">
+                    <div class="kpi-card"><div class="kpi-label">Moyenne Classe T${trimActuel}</div><div class="kpi-value">${avgAct}</div><div class="kpi-sub">${subClasseStr}</div></div>
+                    <div class="kpi-card"><div class="kpi-label">Moy. Niveau ${niveau}ème T${trimActuel}</div><div class="kpi-value">${lAvgAct}</div><div class="kpi-sub">${subNiveauStr}</div></div>
+                    <div class="kpi-card"><div class="kpi-label">${labelReussite}</div><div class="kpi-value">${tauxReussite}%</div><div class="kpi-sub">${subReussite}</div></div>                            
+                    <div class="kpi-card"><div class="kpi-label">Absences (Moy. nb d'heures/Élève)</div><div class="kpi-value">${avgAbsAct} h</div><div class="kpi-sub">${avgRetardsMin} min. de retards</div></div>
+                </div>
+                <div class="charts-container">
+                    <div class="chart-box"><div class="chart-title">Moyennes par Matière</div><img src="${imgHist}" /></div>
+                    <div class="chart-box"><div class="chart-title">Répartition des Moyennes Générales T${trimActuel}</div><img src="${imgDist}" /></div>
+                </div>
+            </div>
+        `;
+        renderZone.appendChild(pageRecto);
+
+        let htmlRows = classStudents.map(s => {
+            let evolStr = '-'; let rowClass = "";
+            if (trimActuel > 1 && s.moyPrec !== null && s.moyAct !== null) {
+                let diff = s.moyAct - s.moyPrec; let seuil = isSixieme ? 0.2 : 0.5; 
+                if (diff >= seuil) evolStr = `<span class="cell-green">▲ +${diff.toFixed(1)}</span>`; else if (diff <= -seuil) { evolStr = `<span class="cell-red">▼ ${diff.toFixed(1)}</span>`; rowClass = "tr-alert"; } else evolStr = `<span style="color:#888;">${diff > 0 ? '+':''}${diff.toFixed(1)}</span>`;
+            }
+            let colorAct = 'inherit';
+            if (s.moyAct !== null) {
+                if (isSixieme) { if (s.moyAct < 2) colorAct = '#E1000F'; else if (s.moyAct < 2.4) colorAct = '#E6B800'; else if (s.moyAct < 3) colorAct = '#29D64E'; else colorAct = '#136324'; } 
+                else { if (s.moyAct < 10) colorAct = '#E1000F'; else if (s.moyAct < 12) colorAct = '#FFD700'; else if (s.moyAct < 15) colorAct = '#29D64E'; else colorAct = '#136324'; }
+            }
+
+            let absActh = (s.absAct * 3.5).toFixed(0); let absPrech = (s.absPrec * 3.5).toFixed(0);
+            let strAbs = trimActuel > 1 && (s.absAct > 0 || s.absPrec > 0) ? `${absActh}h (${absPrech}h)` : `${absActh}h`;
+            let strRet = trimActuel > 1 && (s.retardsAct > 0 || s.retardsPrec > 0) ? `${s.retardsAct}m (${s.retardsPrec}m)` : `${s.retardsAct}m`;
+            let strPun = trimActuel > 1 && (s.punitionsAct > 0 || s.punitionsPrec > 0) ? `${s.punitionsAct} (${s.punitionsPrec})` : `${s.punitionsAct}`;
+            let strSan = trimActuel > 1 && (s.sanctionsAct > 0 || s.sanctionsPrec > 0) ? `<span class="cell-red">${s.sanctionsAct} (${s.sanctionsPrec})</span>` : `<span class="cell-red">${s.sanctionsAct}</span>`;
+            
+            if (s.absAct === 0 && s.absPrec === 0) strAbs = '-'; if (s.retardsAct === 0 && s.retardsPrec === 0) strRet = '-'; if (s.punitionsAct === 0 && s.punitionsPrec === 0) strPun = '-'; if (s.sanctionsAct === 0 && s.sanctionsPrec === 0) strSan = '-';
+            
+            let strVoeux = s.voeux ? `<span style="color:var(--marianne-blue); font-weight:bold;">${s.voeux}</span>` : '-';
+            
+            let tdDiscipline = includeDiscipline ? `<td>${strPun}</td><td>${strSan}</td>` : '';
+            
+            // --- NOUVELLE LOGIQUE ORIENTATION ---
+            let showVoeux = isTroisieme && includeOrientation;
+            let tdVoeux = showVoeux ? `<td>${strVoeux}</td>` : '';
+            
+            let tdPrec = trimActuel > 1 ? `<td>${s.moyPrec !== null ? s.moyPrec.toFixed(1) : '-'}</td>` : '';
+            let tdEvol = trimActuel > 1 ? `<td>${evolStr}</td>` : '';
+
+            return `<tr class="${rowClass}"><td class="text-left"><strong>${s.nom}</strong></td>${tdPrec}<td><strong style="font-size:16px; color:${colorAct};">${s.moyAct !== null ? s.moyAct.toFixed(1) : '-'}</strong></td>${tdEvol}<td>${strAbs}</td><td>${strRet}</td>${tdDiscipline}${tdVoeux}<td class="text-left"></td></tr>`;
+        }).join('');
+
+        const pageVerso = document.createElement('div'); pageVerso.className = 'pdf-page-a3';
+        let diffClasse = parseFloat(avgAct) - parseFloat(avgPrec); let evolClasseStr = trimActuel === 1 ? '-' : (isNaN(diffClasse) ? '-' : (diffClasse >= 0 ? `<span class="cell-green">▲ +${diffClasse.toFixed(1)}</span>` : `<span class="cell-red">▼ ${diffClasse.toFixed(1)}</span>`));
+
+        let tdClasseDiscipline = includeDiscipline ? `<td>-</td><td>-</td>` : ''; let thDiscipline = includeDiscipline ? `<th style="width:7%">Pun. T${trimActuel} ${trimActuel>1 ? '(T'+(trimActuel-1)+')' : ''}</th><th style="width:7%">Sanct. T${trimActuel} ${trimActuel>1 ? '(T'+(trimActuel-1)+')' : ''}</th>` : '';
+        
+        // --- NOUVELLE LOGIQUE ORIENTATION (EN-TÊTES ET LARGEUR COMMENTAIRES) ---
+        let showVoeux = isTroisieme && includeOrientation;
+        let thVoeux = showVoeux ? `<th style="width:10%">Vœux Famille</th>` : ''; 
+        let tdClasseVoeux = showVoeux ? `<td>-</td>` : '';
+        let baseWidth = includeDiscipline ? 27 : 41; 
+        let finalWidth = showVoeux ? baseWidth : (baseWidth + 10); 
+        let widthCommentaires = finalWidth + "%";
+        
+        let thPrec = trimActuel > 1 ? `<th style="width:6%">Moy. T${trimActuel-1}</th>` : ''; let thEvol = trimActuel > 1 ? `<th style="width:5%">Évol.</th>` : ''; let tdClassePrec = trimActuel > 1 ? `<td>${avgPrec}</td>` : ''; let tdClasseEvol = trimActuel > 1 ? `<td>${evolClasseStr}</td>` : '';
+
+        let htmlRowClasseVerso = `<tr style="background-color: #f0f4f8; font-weight: bold; border-top: 2px solid var(--marianne-blue);"><td class="text-left">MOYENNE CLASSE</td>${tdClassePrec}<td><strong style="font-size:16px;">${avgAct}</strong></td>${tdClasseEvol}<td>${avgAbsAct}h</td><td>${avgRetardsMin}m</td>${tdClasseDiscipline}${tdClasseVoeux}<td class="text-left"></td></tr>`;
+        
+        pageVerso.innerHTML = `
+            <div class="full-page">
+                <div class="pdf-section-title" style="margin-top:0;">Suivi Individuel Vie Scolaire & Pédagogique - Classe de <strong>${cls}</strong></div>
+                <table class="pdf-table table-verso">
+                    <thead><tr><th class="text-left" style="width:14%">Élève</th>${thPrec}<th style="width:6%">Moy. T${trimActuel}</th>${thEvol}<th style="width:9%">Absences T${trimActuel} ${trimActuel>1 ? '(T'+(trimActuel-1)+')' : ''}</th><th style="width:9%">Retards T${trimActuel} ${trimActuel>1 ? '(T'+(trimActuel-1)+')' : ''}</th>${thDiscipline}${thVoeux}<th class="text-left" style="width:${widthCommentaires}">Commentaires</th></tr></thead>
+                    <tbody>${htmlRows}${htmlRowClasseVerso}</tbody>
+                </table>
+            </div>
+        `;
+        renderZone.appendChild(pageVerso);
+    }
+
+    try { setTimeout(() => { window.print(); setTimeout(() => { renderZone.innerHTML = ''; document.getElementById('btn-generate-pdf').disabled = false; notify("Génération terminée !", "notify-success"); }, 1000); }, 300); } catch (err) { console.error(err); notify("Erreur lors de la préparation de l'impression.", "notify-warning"); document.getElementById('btn-generate-pdf').disabled = false; }
+});
+
+// ==================================================
+// 6. NOTIFICATIONS UI
+// ==================================================
+function notify(msg, className) {
+    const notif = document.getElementById('notification');
+    notif.textContent = msg; notif.className = className; notif.style.display = 'block';
+    if(className === 'notify-success') setTimeout(() => { notif.style.display = 'none'; }, 6000);
+}
+    </script>
+</body>
+</html>
