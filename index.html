@@ -660,8 +660,28 @@ document.getElementById('btn-generate-pdf').addEventListener('click', async func
             }
         });
 
+        // --- DÉBUT CORRECTION ÉCHELLE DYNAMIQUE ---
+        let modeEval = mappingConfig[niveau] || 'notes'; 
+        let yMaxLimit = (modeEval === 'competences') ? 4 : 20;
+
         let datasetsChart = trimActuel === 1 ? [ { label: `T${trimActuel}`, data: matAct, backgroundColor: '#000091' } ] : [ { label: `T${trimActuel-1}`, data: matPrec, backgroundColor: '#bbbbbb' }, { label: `T${trimActuel}`, data: matAct, backgroundColor: '#000091' } ];
-        const imgHist = await createChartImage({ type: 'bar', data: { labels: labelsMat, datasets: datasetsChart }, options: { scales: { y: { beginAtZero: true, max: isSixieme ? 4 : 20 } } } }, 650, 240);
+        
+        const imgHist = await createChartImage({ 
+            type: 'bar', 
+            data: { labels: labelsMat, datasets: datasetsChart }, 
+            options: { 
+                scales: { 
+                    y: { 
+                        beginAtZero: true, 
+                        max: yMaxLimit, 
+                        ticks: { 
+                            stepSize: (modeEval === 'competences') ? 1 : 2 
+                        } 
+                    } 
+                } 
+            } 
+        }, 650, 240);
+        // --- FIN CORRECTION ÉCHELLE DYNAMIQUE ---
 
         const formatPastille = (note) => {
             if (note === undefined || note === null || isNaN(note)) return '-';
@@ -731,7 +751,6 @@ document.getElementById('btn-generate-pdf').addEventListener('click', async func
             
             let tdDiscipline = includeDiscipline ? `<td>${strPun}</td><td>${strSan}</td>` : '';
             
-            // --- NOUVELLE LOGIQUE ORIENTATION ---
             let showVoeux = isTroisieme && includeOrientation;
             let tdVoeux = showVoeux ? `<td>${strVoeux}</td>` : '';
             
@@ -746,7 +765,6 @@ document.getElementById('btn-generate-pdf').addEventListener('click', async func
 
         let tdClasseDiscipline = includeDiscipline ? `<td>-</td><td>-</td>` : ''; let thDiscipline = includeDiscipline ? `<th style="width:7%">Pun. T${trimActuel} ${trimActuel>1 ? '(T'+(trimActuel-1)+')' : ''}</th><th style="width:7%">Sanct. T${trimActuel} ${trimActuel>1 ? '(T'+(trimActuel-1)+')' : ''}</th>` : '';
         
-        // --- NOUVELLE LOGIQUE ORIENTATION (EN-TÊTES ET LARGEUR COMMENTAIRES) ---
         let showVoeux = isTroisieme && includeOrientation;
         let thVoeux = showVoeux ? `<th style="width:10%">Vœux Famille</th>` : ''; 
         let tdClasseVoeux = showVoeux ? `<td>-</td>` : '';
@@ -772,7 +790,6 @@ document.getElementById('btn-generate-pdf').addEventListener('click', async func
 
     try { setTimeout(() => { window.print(); setTimeout(() => { renderZone.innerHTML = ''; document.getElementById('btn-generate-pdf').disabled = false; notify("Génération terminée !", "notify-success"); }, 1000); }, 300); } catch (err) { console.error(err); notify("Erreur lors de la préparation de l'impression.", "notify-warning"); document.getElementById('btn-generate-pdf').disabled = false; }
 });
-
 // ==================================================
 // 6. NOTIFICATIONS UI
 // ==================================================
