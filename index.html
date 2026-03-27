@@ -613,6 +613,10 @@ document.getElementById('btn-generate-pdf').addEventListener('click', async func
         let niveau = cls.charAt(0);
         const isSixieme = cls.startsWith('6'); const isTroisieme = cls.startsWith('3');
         
+        // Détermination du mode d'évaluation (Notes ou Compétences)
+        let modeEval = mappingConfig[niveau] || 'notes'; 
+        let isModeComp = (modeEval === 'competences');
+
         let moyPrecClass = classStudents.map(s => s.moyPrec).filter(m => m !== null);
         let avgPrec = moyPrecClass.length ? (moyPrecClass.reduce((a,b)=>a+b,0)/moyPrecClass.length).toFixed(1) : '-';
         let moyActClass = classStudents.map(s => s.moyAct).filter(m => m !== null);
@@ -623,14 +627,15 @@ document.getElementById('btn-generate-pdf').addEventListener('click', async func
             Object.values(s.notesAct).forEach(note => {
                 if (note !== undefined && note !== null) {
                     totalNotes++;
-                    if (isSixieme ? note < 3 : note < 10) less10++;
+                    // Seuil de réussite adapté
+                    if (isModeComp ? note < 3 : note < 10) less10++;
                 }
             });
         });
         
         let tauxReussite = totalNotes > 0 ? (((totalNotes - less10) / totalNotes) * 100).toFixed(0) : '-';                
-        let labelReussite = isSixieme ? `Réussite T${trimActuel} (Pos. 3 & 4)` : `Taux Réussite T${trimActuel} (≥10)`;
-        let subReussite = isSixieme ? `${less10} pos. 1-2 (sur ${totalNotes})` : `${less10} notes < 10 (sur ${totalNotes})`;
+        let labelReussite = isModeComp ? `Réussite T${trimActuel} (Pos. 3 & 4)` : `Taux Réussite T${trimActuel} (≥10)`;
+        let subReussite = isModeComp ? `${less10} pos. 1-2 (sur ${totalNotes})` : `${less10} notes < 10 (sur ${totalNotes})`;
 
         let totalAbsAct = classStudents.reduce((sum, s) => sum + s.absAct, 0); 
         let avgAbsAct = classStudents.length ? ((totalAbsAct * 3.5) / classStudents.length).toFixed(1) : '-';
@@ -640,14 +645,29 @@ document.getElementById('btn-generate-pdf').addEventListener('click', async func
         let lAvgPrec = lStats.moyPrec.length ? (lStats.moyPrec.reduce((a,b)=>a+b,0)/lStats.moyPrec.length).toFixed(1) : '-';
         let lAvgAct = lStats.moyAct.length ? (lStats.moyAct.reduce((a,b)=>a+b,0)/lStats.moyAct.length).toFixed(1) : '-';
 
-        let dist = isSixieme ? {"<2":0, "2-2.5":0, "2.5-3":0, ">3":0} : {"<10":0, "10-12":0, "12-15":0, ">15":0};
-        let labelsDist = isSixieme ? ['< 2', '2 à 2.5', '2.5 à 3', '> 3'] : ['< 10', '10 à 12', '12 à 15', '> 15'];
+        // --- CORRECTIF 1 : RÉPARTITION STATISTIQUE DYNAMIQUE ---
+        let dist = isModeComp ? {"<2":0, "2-2.5":0, "2.5-3":0, ">3":0} : {"<10":0, "10-12":0, "12-15":0, ">15":0};
+        let labelsDist = isModeComp ? ['< 2', '2 à 2.5', '2.5 à 3', '> 3'] : ['< 10', '10 à 12', '12 à 15', '> 15'];
+        
         moyActClass.forEach(m => { 
-            if(isSixieme) { if(m<2) dist["<2"]++; else if(m<2.5) dist["2-2.5"]++; else if(m<3) dist["2.5-3"]++; else dist[">3"]++; }
-            else { if(m<10) dist["<10"]++; else if(m<12) dist["10-12"]++; else if(m<15) dist["12-15"]++; else dist[">15"]++; }
+            if(isModeComp) { 
+                if(m < 2) dist["<2"]++; else if(m < 2.5) dist["2-2.5"]++; else if(m < 3) dist["2.5-3"]++; else dist[">3"]++; 
+            } else { 
+                if(m < 10) dist["<10"]++; else if(m < 12) dist["10-12"]++; else if(m < 15) dist["12-15"]++; else dist[">15"]++; 
+            }
         });
         
-        const imgDist = await createChartImage({ type: 'bar', data: { labels: labelsDist, datasets: [{ data: Object.values(dist), backgroundColor: ['#E1000F', '#FFD700', '#29D64E', '#136324'] }] }, options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } } }, 450, 240);
+        const imgDist = await createChartImage({ 
+            type: 'bar', 
+            data: { 
+                labels: labelsDist, 
+                datasets: [{ data: Object.values(dist), backgroundColor: ['#E1000F', '#FFD700', '#29D64E', '#136324'] }] 
+            }, 
+            options: { 
+                plugins: { legend: { display: false } }, 
+                scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } 
+            } 
+        }, 450, 240);
 
         let matPrec = [], matAct = [], labelsMat = [];
         matieresList.forEach(mat => {
@@ -660,10 +680,8 @@ document.getElementById('btn-generate-pdf').addEventListener('click', async func
             }
         });
 
-        // --- DÉBUT CORRECTION ÉCHELLE DYNAMIQUE ---
-        let modeEval = mappingConfig[niveau] || 'notes'; 
-        let yMaxLimit = (modeEval === 'competences') ? 4 : 20;
-
+        // --- CORRECTIF 2 : ÉCHELLE PAR MATIÈRE DYNAMIQUE ---
+        let yMaxLimit = isModeComp ? 4 : 20;
         let datasetsChart = trimActuel === 1 ? [ { label: `T${trimActuel}`, data: matAct, backgroundColor: '#000091' } ] : [ { label: `T${trimActuel-1}`, data: matPrec, backgroundColor: '#bbbbbb' }, { label: `T${trimActuel}`, data: matAct, backgroundColor: '#000091' } ];
         
         const imgHist = await createChartImage({ 
@@ -674,18 +692,16 @@ document.getElementById('btn-generate-pdf').addEventListener('click', async func
                     y: { 
                         beginAtZero: true, 
                         max: yMaxLimit, 
-                        ticks: { 
-                            stepSize: (modeEval === 'competences') ? 1 : 2 
-                        } 
+                        ticks: { stepSize: isModeComp ? 1 : 2 } 
                     } 
                 } 
             } 
         }, 650, 240);
-        // --- FIN CORRECTION ÉCHELLE DYNAMIQUE ---
 
         const formatPastille = (note) => {
             if (note === undefined || note === null || isNaN(note)) return '-';
-            if (isSixieme) {
+            // Utilisation de isModeComp pour la mise en forme conditionnelle
+            if (isModeComp) {
                 let num = parseFloat(note); if (num < 1) num = 1; if (num > 4) num = 4;
                 let textColor = '#000000';
                 if (num < 2) textColor = '#E1000F'; else if (num < 2.5) textColor = '#E6B800'; else if (num < 3.5) textColor = '#29D64E'; else textColor = '#136324';
@@ -730,13 +746,18 @@ document.getElementById('btn-generate-pdf').addEventListener('click', async func
         let htmlRows = classStudents.map(s => {
             let evolStr = '-'; let rowClass = "";
             if (trimActuel > 1 && s.moyPrec !== null && s.moyAct !== null) {
-                let diff = s.moyAct - s.moyPrec; let seuil = isSixieme ? 0.2 : 0.5; 
+                let diff = s.moyAct - s.moyPrec; 
+                // Seuil d'alerte adapté au mode
+                let seuil = isModeComp ? 0.2 : 0.5; 
                 if (diff >= seuil) evolStr = `<span class="cell-green">▲ +${diff.toFixed(1)}</span>`; else if (diff <= -seuil) { evolStr = `<span class="cell-red">▼ ${diff.toFixed(1)}</span>`; rowClass = "tr-alert"; } else evolStr = `<span style="color:#888;">${diff > 0 ? '+':''}${diff.toFixed(1)}</span>`;
             }
             let colorAct = 'inherit';
             if (s.moyAct !== null) {
-                if (isSixieme) { if (s.moyAct < 2) colorAct = '#E1000F'; else if (s.moyAct < 2.4) colorAct = '#E6B800'; else if (s.moyAct < 3) colorAct = '#29D64E'; else colorAct = '#136324'; } 
-                else { if (s.moyAct < 10) colorAct = '#E1000F'; else if (s.moyAct < 12) colorAct = '#FFD700'; else if (s.moyAct < 15) colorAct = '#29D64E'; else colorAct = '#136324'; }
+                if (isModeComp) { 
+                    if (s.moyAct < 2) colorAct = '#E1000F'; else if (s.moyAct < 2.4) colorAct = '#E6B800'; else if (s.moyAct < 3) colorAct = '#29D64E'; else colorAct = '#136324'; 
+                } else { 
+                    if (s.moyAct < 10) colorAct = '#E1000F'; else if (s.moyAct < 12) colorAct = '#FFD700'; else if (s.moyAct < 15) colorAct = '#29D64E'; else colorAct = '#136324'; 
+                }
             }
 
             let absActh = (s.absAct * 3.5).toFixed(0); let absPrech = (s.absPrec * 3.5).toFixed(0);
@@ -790,6 +811,8 @@ document.getElementById('btn-generate-pdf').addEventListener('click', async func
 
     try { setTimeout(() => { window.print(); setTimeout(() => { renderZone.innerHTML = ''; document.getElementById('btn-generate-pdf').disabled = false; notify("Génération terminée !", "notify-success"); }, 1000); }, 300); } catch (err) { console.error(err); notify("Erreur lors de la préparation de l'impression.", "notify-warning"); document.getElementById('btn-generate-pdf').disabled = false; }
 });
+
+
 // ==================================================
 // 6. NOTIFICATIONS UI
 // ==================================================
