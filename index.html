@@ -461,7 +461,7 @@ function extractData() {
             if (combined.includes('classe')) col.classe = c;
             if (col.nom === -1 && (combined.includes('nom') || combined.includes('eleve'))) col.nom = c;
             if (col.moyGen === -1 && combined.includes('moyenne')) col.moyGen = c;
-            if (combined.includes('nb abs') || combined.includes('demi-journees')) col.abs = c;
+if (combined.includes('nb abs') || combined.includes('demi-journees') || combined.includes('½ journees')) col.abs = c;
             if (combined.includes('retard') && !combined.includes('minutes')) col.retards = c;
             if (combined.includes('retard') && combined.includes('minutes')) col.retardsMin = c;
 
@@ -498,13 +498,24 @@ function extractData() {
 
             if (isPunitions) { if (isPrec) students[nom].punitionsPrec++; if (isActuel) students[nom].punitionsAct++; } 
             else if (isSanctions) { if (isPrec) students[nom].sanctionsPrec++; if (isActuel) students[nom].sanctionsAct++; } 
+// Parsing intelligent des heures d'absence (ex: "86h30" converti en 86.5)
             else if (isAbs) {
-                let vAbs = parseInt(sheetArr[r][col.abs]) || 0;
+                let absRaw = (sheetArr[r][col.abs] || "").toString().toLowerCase().trim();
+                let vAbs = 0;
+                
+                if (absRaw.includes('h')) {
+                    let parts = absRaw.split('h');
+                    let heures = parseInt(parts[0], 10) || 0;
+                    let minutes = parseInt(parts[1], 10) || 0;
+                    vAbs = heures + (minutes / 60);
+                } else {
+                    vAbs = parseFloat(absRaw) || 0;
+                }
+
                 let vRet = col.retardsMin !== -1 ? (parseInt(sheetArr[r][col.retardsMin]) || 0) : (parseInt(sheetArr[r][col.retards]) * 10 || 0);
                 if (isPrec) { students[nom].absPrec += vAbs; students[nom].retardsPrec += vRet; }
                 if (isActuel) { students[nom].absAct += vAbs; students[nom].retardsAct += vRet; }
-            }
-            else {
+            }            else {
                 if (col.moyGen !== -1) {
                     let val = sheetArr[r][col.moyGen];
                     if (val && !['Abs', 'Disp'].includes(val)) {
@@ -637,9 +648,9 @@ document.getElementById('btn-generate-pdf').addEventListener('click', async func
         let labelReussite = isModeComp ? `Réussite T${trimActuel} (Pos. 3 & 4)` : `Taux Réussite T${trimActuel} (≥10)`;
         let subReussite = isModeComp ? `${less10} pos. 1-2 (sur ${totalNotes})` : `${less10} notes < 10 (sur ${totalNotes})`;
 
+// Calcul de la moyenne de la classe sur la valeur réelle
         let totalAbsAct = classStudents.reduce((sum, s) => sum + s.absAct, 0); 
-        let avgAbsAct = classStudents.length ? ((totalAbsAct * 3.5) / classStudents.length).toFixed(1) : '-';
-        let avgRetardsMin = classStudents.length ? (classStudents.reduce((sum, s) => sum + s.retardsAct, 0) / classStudents.length).toFixed(0) : '-';
+        let avgAbsAct = classStudents.length ? (totalAbsAct / classStudents.length).toFixed(1) : '-';        let avgRetardsMin = classStudents.length ? (classStudents.reduce((sum, s) => sum + s.retardsAct, 0) / classStudents.length).toFixed(0) : '-';
 
         let lStats = data.levelStats[niveau] || {moyPrec:[], moyAct:[]};
         let lAvgPrec = lStats.moyPrec.length ? (lStats.moyPrec.reduce((a,b)=>a+b,0)/lStats.moyPrec.length).toFixed(1) : '-';
@@ -760,8 +771,9 @@ document.getElementById('btn-generate-pdf').addEventListener('click', async func
                 }
             }
 
-            let absActh = (s.absAct * 3.5).toFixed(0); let absPrech = (s.absPrec * 3.5).toFixed(0);
-            let strAbs = trimActuel > 1 && (s.absAct > 0 || s.absPrec > 0) ? `${absActh}h (${absPrech}h)` : `${absActh}h`;
+
+            let absActh = s.absAct.toFixed(0); 
+            let absPrech = s.absPrec.toFixed(0);            let strAbs = trimActuel > 1 && (s.absAct > 0 || s.absPrec > 0) ? `${absActh}h (${absPrech}h)` : `${absActh}h`;
             let strRet = trimActuel > 1 && (s.retardsAct > 0 || s.retardsPrec > 0) ? `${s.retardsAct}m (${s.retardsPrec}m)` : `${s.retardsAct}m`;
             let strPun = trimActuel > 1 && (s.punitionsAct > 0 || s.punitionsPrec > 0) ? `${s.punitionsAct} (${s.punitionsPrec})` : `${s.punitionsAct}`;
             let strSan = trimActuel > 1 && (s.sanctionsAct > 0 || s.sanctionsPrec > 0) ? `<span class="cell-red">${s.sanctionsAct} (${s.sanctionsPrec})</span>` : `<span class="cell-red">${s.sanctionsAct}</span>`;
